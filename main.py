@@ -1,4 +1,3 @@
-import requests
 from flask import Flask, request, Response, render_template_string, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
@@ -24,12 +23,6 @@ class URLMapping(db.Model):
 def initialize_database():
     with app.app_context():
         db.create_all()
-        # 테스트용 데이터 추가
-        if not URLMapping.query.get(1234):
-            db.session.add(URLMapping(id=1234, target_url='http://example.com'))
-        if not URLMapping.query.get(5678):
-            db.session.add(URLMapping(id=5678, target_url='https://www.google.com'))
-        db.session.commit()
         print("데이터베이스 초기화 완료.")
 
 # --- HTML 폼 템플릿 (수정 없음) ---
@@ -58,21 +51,46 @@ ADD_FORM_HTML = """
         <button type="submit">URL 추가</button>
     </form>
     <hr>
-    <h3>기존 URL 테스트 (GET 요청 시 즉시 리다이렉트):</h3>
-    <ul>
-        <li><a href="/?id=1234">/?id=1234 (example.com으로 리다이렉트)</a></li>
-        <li><a href="/?id=5678">/?id=5678 (google.com으로 리다이렉트)</a></li>
-        <li><a href="/?id=9999">/?id=9999 (유효하지 않은 ID, 폼으로 이동)</a></li>
-    </ul>
 </body>
 </html>
 """
+
+# --- 리다이렉션 대기 페이지 템플릿 (스타일 구문 오류 수정됨) ---
+REDIRECT_WAIT_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- content="3"은 3초를 의미합니다. -->
+    <meta http-equiv="refresh" content="3; url={{ target_url }}">
+    <title>리다이렉트 중...</title>
+    <style>
+        /* CSS는 Jinja2 구문 분석기의 영향을 받지 않도록 일반 텍스트로 정의됩니다 */
+        body { 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+            font-family: sans-serif;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <h1>잠시만 기다려주세요...</h1>
+    <p>{{ target_url }}(으)로 이동 중입니다.</p>
+    <!-- 로딩 애니메이션 이미지 링크는 그대로 유지됩니다 -->
+    <img src="{{ url_for('static', filename='loading.gif') }}" alt="로딩 애니메이션" width="200" height="200"/>
+</body>
+</html>
+"""
+
 
 # --- 메인 라우트: GET/POST 처리 ---
 @app.route('/', methods=['GET', 'POST'])
 def handle_requests():
     if request.method == 'POST':
-        # POST 요청 처리: 새 URL과 사용자 지정 ID 추가
+        # POST 요청 처리: 새 URL과 사용자 지정 ID 추가 (이전 코드와 동일)
         url_id = request.form.get('url_id')
         target_url = request.form.get('target_url')
 
@@ -99,7 +117,7 @@ def handle_requests():
             return redirect(url_for('handle_requests'))
 
     else:
-        # GET 요청 처리 (즉시 리다이렉트 또는 폼 표시)
+        # GET 요청 처리
         url_id = request.args.get('id')
 
         if not url_id:
@@ -111,9 +129,10 @@ def handle_requests():
             mapping = URLMapping.query.get(int(url_id))
             
             if mapping:
-                # 유효한 URL이 있으면 즉시 해당 URL로 HTTP 302 리다이렉트
-                print(f"ID {url_id}을(를) {mapping.target_url}(으)로 즉시 리다이렉트합니다.")
-                return redirect(mapping.target_url, code=302)
+                # 유효한 URL이 있으면, 즉시 리다이렉트 대신 대기 페이지 렌더링
+                print(f"ID {url_id} 확인됨. 3초 후 {mapping.target_url}(으)로 이동합니다.")
+                # target_url 변수만 템플릿으로 전달합니다.
+                return render_template_string(REDIRECT_WAIT_HTML, target_url=mapping.target_url)
             else:
                 # 데이터베이스에 ID가 없으면 에러 메시지를 flash하고 폼 페이지로 리다이렉트
                 flash(f"오류: ID {url_id}에 해당하는 URL을 찾을 수 없습니다. 새로운 URL을 추가해 주세요.")
